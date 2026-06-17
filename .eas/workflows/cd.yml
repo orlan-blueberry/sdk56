@@ -34,11 +34,25 @@ on:
   workflow_dispatch: {}
 
 jobs:
+  # Pre-deploy gate: typecheck before anything deploys. A push to main publishes
+  # straight to a live channel (an OTA reaches users on next launch), so re-run
+  # tsc here to stop a broken bundle shipping. Everything downstream chains off
+  # the fingerprint jobs, and they `needs: [typecheck]` — so a tsc failure blocks
+  # the entire pipeline.
+  typecheck:
+    name: Typecheck (pre-deploy gate)
+    steps:
+      - uses: eas/checkout
+      - uses: eas/install_node_modules
+      - name: tsc --noEmit
+        run: npm run typecheck
+
   # --- Fingerprints: one per EAS environment, must match the build profile -----
   fingerprint_dev:
     name: Fingerprint (development env)
     type: fingerprint
     environment: development
+    needs: [typecheck]
 
   # ===== development channel (dev client, build only) =========================
   # Android disabled for spike — iOS only (faster). Original both-platform
@@ -62,6 +76,9 @@ jobs:
       fingerprint_hash: ${{ needs.fingerprint_dev.outputs.ios_fingerprint_hash }}
       # SPIKE: dev profile builds a simulator .app, so match simulator builds.
       simulator: true
+      # Dedupe concurrent CD runs (parallel merges to main): wait for an
+      # in-flight matching build instead of kicking off a duplicate.
+      wait_for_in_progress: true
 
   # Original both-platform OTA (restore after spike):
   # dev_update:
@@ -112,12 +129,15 @@ jobs:
   # ===========================================================================
   # DISABLED FOR SPIKE — uncomment everything below to restore the full pipeline
   # (prod fingerprint + staging & production-testflight channels + submits).
+  # When restoring, add `wait_for_in_progress: true` to every get-build job
+  # (as on dev_get_ios above) so parallel merges don't trigger duplicate builds.
   # ===========================================================================
 
   # fingerprint_prod:
   #   name: Fingerprint (production env)
   #   type: fingerprint
   #   environment: production
+  #   needs: [typecheck]
 
   # ===== staging channel (store, build + submit) ==============================
   # staging_get_android:
