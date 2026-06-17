@@ -1,0 +1,244 @@
+# Continuous Deployment
+#
+# Mirrors client-portal-mobile's .github/workflows/cd.yml, re-expressed as an
+# EAS Workflow. Push to `main` deploys each channel; each channel auto-routes
+# per the native fingerprint:
+#   fingerprint matches latest build on channel -> OTA update (free, fast)
+#   fingerprint drifted (or no build yet)        -> native build (+ submit)
+#
+# runtimeVersion policy is `fingerprint` (app.json), so an OTA only reaches
+# binaries whose native layer matches. EAS computes the fingerprint server-side
+# (`fingerprint` job), looks up a matching build (`get-build`), and the `if`
+# conditions pick update-vs-build. No manual `fingerprint:compare` parsing like
+# the GitHub Actions version — EAS does it natively.
+#
+# Channel -> eas.json build/submit profile (same name). development is a dev
+# client (build only); staging + production-testflight build, then submit.
+#
+# Routing is per channel (both-or-neither), matching the original: if EITHER
+# platform's fingerprint drifted, both platforms rebuild and the OTA is skipped.
+#
+# SPIKE: narrowed to the `development` channel only (2 builds max on first run).
+# `fingerprint_prod`, the `staging` + `production-testflight` channels, and all
+# `submit` jobs are commented out below. Uncomment to restore the full pipeline.
+#
+# Simplified vs the original CD: no workflow_dispatch channel-picker or
+# auto|update|build-submit mode inputs (those need long `if` chains). A manual
+# run does a full pass. Ask if you want the forced-mode dispatch back.
+
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  # --- Fingerprints: one per EAS environment, must match the build profile -----
+  fingerprint_dev:
+    name: Fingerprint (development env)
+    type: fingerprint
+    environment: development
+
+  # ===== development channel (dev client, build only) =========================
+  # Android disabled for spike — iOS only (faster). Original both-platform
+  # jobs/routing kept commented below; uncomment all to restore.
+  # dev_get_android:
+  #   name: "development: find Android build"
+  #   type: get-build
+  #   needs: [fingerprint_dev]
+  #   params:
+  #     platform: android
+  #     channel: development
+  #     fingerprint_hash: ${{ needs.fingerprint_dev.outputs.android_fingerprint_hash }}
+
+  dev_get_ios:
+    name: "development: find iOS build"
+    type: get-build
+    needs: [fingerprint_dev]
+    params:
+      platform: ios
+      channel: development
+      fingerprint_hash: ${{ needs.fingerprint_dev.outputs.ios_fingerprint_hash }}
+      # SPIKE: dev profile builds a simulator .app, so match simulator builds.
+      simulator: true
+
+  # Original both-platform OTA (restore after spike):
+  # dev_update:
+  #   name: "development: OTA update"
+  #   type: update
+  #   environment: development
+  #   needs: [dev_get_android, dev_get_ios]
+  #   if: ${{ needs.dev_get_android.outputs.build_id && needs.dev_get_ios.outputs.build_id }}
+  #   params:
+  #     channel: development
+  dev_update:
+    name: "development: OTA update"
+    type: update
+    environment: development
+    needs: [dev_get_ios]
+    if: ${{ needs.dev_get_ios.outputs.build_id }}
+    params:
+      channel: development
+      platform: ios
+
+  # Original both-platform build gate (restore after spike):
+  # dev_build_ios:
+  #   name: "development: build iOS"
+  #   type: build
+  #   needs: [dev_get_android, dev_get_ios]
+  #   if: ${{ !needs.dev_get_android.outputs.build_id || !needs.dev_get_ios.outputs.build_id }}
+  #   params:
+  #     platform: ios
+  #     profile: development
+  dev_build_ios:
+    name: "development: build iOS"
+    type: build
+    needs: [dev_get_ios]
+    if: ${{ !needs.dev_get_ios.outputs.build_id }}
+    params:
+      platform: ios
+      profile: development
+
+  # dev_build_android:
+  #   name: "development: build Android"
+  #   type: build
+  #   needs: [dev_get_android, dev_get_ios]
+  #   if: ${{ !needs.dev_get_android.outputs.build_id || !needs.dev_get_ios.outputs.build_id }}
+  #   params:
+  #     platform: android
+  #     profile: development
+
+  # ===========================================================================
+  # DISABLED FOR SPIKE — uncomment everything below to restore the full pipeline
+  # (prod fingerprint + staging & production-testflight channels + submits).
+  # ===========================================================================
+
+  # fingerprint_prod:
+  #   name: Fingerprint (production env)
+  #   type: fingerprint
+  #   environment: production
+
+  # ===== staging channel (store, build + submit) ==============================
+  # staging_get_android:
+  #   name: "staging: find Android build"
+  #   type: get-build
+  #   needs: [fingerprint_dev]
+  #   params:
+  #     platform: android
+  #     channel: staging
+  #     fingerprint_hash: ${{ needs.fingerprint_dev.outputs.android_fingerprint_hash }}
+  #
+  # staging_get_ios:
+  #   name: "staging: find iOS build"
+  #   type: get-build
+  #   needs: [fingerprint_dev]
+  #   params:
+  #     platform: ios
+  #     channel: staging
+  #     fingerprint_hash: ${{ needs.fingerprint_dev.outputs.ios_fingerprint_hash }}
+  #
+  # staging_update:
+  #   name: "staging: OTA update"
+  #   type: update
+  #   environment: development
+  #   needs: [staging_get_android, staging_get_ios]
+  #   if: ${{ needs.staging_get_android.outputs.build_id && needs.staging_get_ios.outputs.build_id }}
+  #   params:
+  #     channel: staging
+  #
+  # staging_build_android:
+  #   name: "staging: build Android"
+  #   type: build
+  #   needs: [staging_get_android, staging_get_ios]
+  #   if: ${{ !needs.staging_get_android.outputs.build_id || !needs.staging_get_ios.outputs.build_id }}
+  #   params:
+  #     platform: android
+  #     profile: staging
+  #
+  # staging_build_ios:
+  #   name: "staging: build iOS"
+  #   type: build
+  #   needs: [staging_get_android, staging_get_ios]
+  #   if: ${{ !needs.staging_get_android.outputs.build_id || !needs.staging_get_ios.outputs.build_id }}
+  #   params:
+  #     platform: ios
+  #     profile: staging
+  #
+  # staging_submit_android:
+  #   name: "staging: submit Android"
+  #   type: submit
+  #   needs: [staging_build_android]
+  #   params:
+  #     build_id: ${{ needs.staging_build_android.outputs.build_id }}
+  #     profile: staging
+  #
+  # staging_submit_ios:
+  #   name: "staging: submit iOS"
+  #   type: submit
+  #   needs: [staging_build_ios]
+  #   params:
+  #     build_id: ${{ needs.staging_build_ios.outputs.build_id }}
+  #     profile: staging
+
+  # ===== production-testflight channel (store, build + submit) =================
+  # ptf_get_android:
+  #   name: "production-testflight: find Android build"
+  #   type: get-build
+  #   needs: [fingerprint_prod]
+  #   params:
+  #     platform: android
+  #     channel: production-testflight
+  #     fingerprint_hash: ${{ needs.fingerprint_prod.outputs.android_fingerprint_hash }}
+  #
+  # ptf_get_ios:
+  #   name: "production-testflight: find iOS build"
+  #   type: get-build
+  #   needs: [fingerprint_prod]
+  #   params:
+  #     platform: ios
+  #     channel: production-testflight
+  #     fingerprint_hash: ${{ needs.fingerprint_prod.outputs.ios_fingerprint_hash }}
+  #
+  # ptf_update:
+  #   name: "production-testflight: OTA update"
+  #   type: update
+  #   environment: production
+  #   needs: [ptf_get_android, ptf_get_ios]
+  #   if: ${{ needs.ptf_get_android.outputs.build_id && needs.ptf_get_ios.outputs.build_id }}
+  #   params:
+  #     channel: production-testflight
+  #
+  # ptf_build_android:
+  #   name: "production-testflight: build Android"
+  #   type: build
+  #   needs: [ptf_get_android, ptf_get_ios]
+  #   if: ${{ !needs.ptf_get_android.outputs.build_id || !needs.ptf_get_ios.outputs.build_id }}
+  #   params:
+  #     platform: android
+  #     profile: production-testflight
+  #
+  # ptf_build_ios:
+  #   name: "production-testflight: build iOS"
+  #   type: build
+  #   needs: [ptf_get_android, ptf_get_ios]
+  #   if: ${{ !needs.ptf_get_android.outputs.build_id || !needs.ptf_get_ios.outputs.build_id }}
+  #   params:
+  #     platform: ios
+  #     profile: production-testflight
+  #
+  # ptf_submit_android:
+  #   name: "production-testflight: submit Android"
+  #   type: submit
+  #   needs: [ptf_build_android]
+  #   params:
+  #     build_id: ${{ needs.ptf_build_android.outputs.build_id }}
+  #     profile: production-testflight
+  #
+  # ptf_submit_ios:
+  #   name: "production-testflight: submit iOS"
+  #   type: submit
+  #   needs: [ptf_build_ios]
+  #   params:
+  #     build_id: ${{ needs.ptf_build_ios.outputs.build_id }}
+  #     profile: production-testflight

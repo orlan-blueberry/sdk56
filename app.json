@@ -7,10 +7,21 @@
     "icon": "./assets/images/icon.png",
     "scheme": "sdk56",
     "userInterfaceStyle": "automatic",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/e543247a-81e8-4d80-9eef-3bced128f3aa"
+    },
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.orlanblueberry.sdk56",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
+      "package": "com.orlanblueberry.sdk56",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -39,6 +50,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e543247a-81e8-4d80-9eef-3bced128f3aa"
+      }
+    },
+    "owner": "orlan.blueberry"
   }
 }
