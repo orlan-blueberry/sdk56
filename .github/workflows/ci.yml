@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+# Cancel a stale run when a new commit lands on the same PR branch. CI is
+# read-only (lint/typecheck) so killing an in-flight run is always safe — review
+# pushes supersede earlier ones. The custom `head_ref` group is GitHub-only; EAS
+# Workflows cannot express this (it offers a single fixed-group, const-true knob),
+# which is why CI lives here and not in .eas/workflows/.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # One job: checkout + install once, then each check as its own step. Every
+  # check uses `if: ${{ !cancelled() }}` so a failing step does NOT skip the
+  # rest — one run surfaces all failures at once (mirrors client-portal's ci.yml).
+  # Spike only has `lint` + `typecheck` scripts; add format/audit/expo-doctor
+  # here once those scripts + deps exist.
+  checks:
+    name: Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Repo uses bun (bun.lock). setup-bun caches the global module cache.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.10
+
+      # Reproducible install from the committed bun.lock.
+      - run: bun install --frozen-lockfile
+
+      - name: Lint
+        if: ${{ !cancelled() }}
+        run: bun run lint
+
+      - name: Typecheck
+        if: ${{ !cancelled() }}
+        run: bun run typecheck

@@ -8,6 +8,9 @@ export function useColorScheme() {
   const [hasHydrated, setHasHydrated] = useState(false);
 
   useEffect(() => {
+    // Detect client hydration: an effect only runs after hydrating on the
+    // client, never during SSR, so setting state here is the intended pattern.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHasHydrated(true);
   }, []);
 
