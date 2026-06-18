@@ -33,6 +33,32 @@ on:
     branches: [main]
   workflow_dispatch: {}
 
+# Concurrency: coalesce-to-latest for rapid merges to main.
+#
+# Stacked PRs (Graphite merge queue) land 3-5 commits on main seconds apart.
+# Without this, each push spawns a full CD run and they all execute at once —
+# wasted compute deploying intermediate commits nobody runs. With it, a newer
+# push to main cancels the in-flight run for the same branch, so only the final
+# HEAD reaches a live channel. Exactly the state you care about.
+#
+# EAS only exposes a single knob here (unlike GitHub Actions): `cancel_in_progress`
+# is a const `true`, and `group` is a fixed placeholder — custom groups and a
+# "queue but don't kill the running deploy" mode are not yet supported. So this is
+# all-or-nothing same-branch cancellation.
+#
+# Safe for this spike: the development channel is build-only (no store submit),
+# and OTA `update` is latest-wins, so cancelling an intermediate run loses nothing.
+# get-build keeps `wait_for_in_progress: true` for genuinely-parallel runs.
+#
+# CAUTION when restoring the full pipeline (staging / production-testflight):
+# `submit` mutates external store state. The cancel window almost always lands
+# during the long fingerprint/get-build/build phases, not the brief submit call,
+# and autoIncrement means a re-submit just ships the newer build — but be aware a
+# cancel mid-submit is the one case this could interrupt an in-flight upload.
+concurrency:
+  group: ${{ workflow.filename }}-${{ github.ref }}
+  cancel_in_progress: true
+
 jobs:
   # Pre-deploy gate: typecheck before anything deploys. A push to main publishes
   # straight to a live channel (an OTA reaches users on next launch), so re-run
